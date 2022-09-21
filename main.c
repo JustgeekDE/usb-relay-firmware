@@ -1,7 +1,9 @@
 /*
  * Basic firmware for www.dcttech.com 1 port USB Relay
  *
- * Copyright 2016 Jonathan McDowell <noodles@earth.li>
+ * Copyright 2022 Philip Peter
+ * based on code by Jonathan McDowell <noodles@earth.li> Copyright 2016
+ * https://github.com/u1f35c/usb-relay-firmware
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,12 +28,15 @@
 #include "usbdrv.h"
 #include "libs-device/osccal.h"
 
-#define RELAY_BIT 8 /* Bit 3 on port B */
+#define RELAY_MASK (1 << 3 | 1 <<4) /* PB3 and PB4 */
 #define CMD_ALL_ON 0xfe
 #define CMD_ALL_OFF 0xfc
 #define CMD_ON 0xff
 #define CMD_OFF 0xfd
 #define CMD_SET_SERIAL 0xfa
+
+#define NR_RELAYS 2
+const uchar RELAY_BITS[NR_RELAYS] = {(1 << 3), (1 << 4)};
 
 uchar serno_read = 0;
 uchar serno[6];
@@ -107,8 +112,10 @@ uchar usbFunctionRead(uchar *data, uchar len)
 			data[i] = serno[i];
 		}
 		data[6] = data[7] = 0;
-		if (PORTB & RELAY_BIT) {
-			data[7] = 1;
+		for (uchar i = 0; i < NR_RELAYS; i++) {
+			if (PORTB & RELAY_BITS[i]) {
+				data[7] |= (1 << i);
+			}
 		}
 		return len;
 	}
@@ -119,16 +126,18 @@ uchar usbFunctionRead(uchar *data, uchar len)
 uchar usbFunctionWrite(uchar *data, uchar len)
 {
 	if (data[0] == CMD_ALL_ON) {
-		PORTB |= RELAY_BIT;
+		PORTB |= RELAY_MASK;
 	} else if (data[0] == CMD_ALL_OFF) {
-		PORTB &= ~(RELAY_BIT);
+		PORTB &= ~(RELAY_MASK);
 	} else if (data[0] == CMD_ON) {
-		if (data[1] == 1) {
-			PORTB |= RELAY_BIT;
+		uchar relay_id = data[1] -1;
+		if (relay_id < NR_RELAYS) {
+			PORTB |= RELAY_BITS[relay_id];
 		}
 	} else if (data[0] == CMD_OFF) {
-		if (data[1] == 1) {
-			PORTB &= ~(RELAY_BIT);
+		uchar relay_id = data[1] -1;
+		if (relay_id < NR_RELAYS) {
+			PORTB &= ~(RELAY_BITS[relay_id]);
 		}
 	} else if (data[0] == CMD_SET_SERIAL) {
 		update_serno(&data[1], 6);
@@ -155,7 +164,7 @@ int __attribute__((noreturn)) main(void)
 	usbDeviceConnect();
 
 	/* Set the relay bit to output mode */
-	DDRB |= RELAY_BIT;
+	DDRB |= RELAY_MASK;
 
 	sei(); /* We're ready to go; enable interrupts */
 
